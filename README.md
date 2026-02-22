@@ -1,8 +1,13 @@
 # OpenAI Spring Boot Demo
 
-A Spring Boot 3 application that demonstrates four OpenAI-powered capabilities:
+A Spring Boot 3 application that demonstrates OpenAI-powered capabilities:
 
 - Chat completion
+- Prompt templates with variables
+- Structured output (JSON schema + POJO mapping)
+- Function calling / tools
+- RAG (load PDF/HTML/text and ask with retrieval)
+- Streaming chat completion (token stream)
 - Text embeddings stored in PostgreSQL (`pgvector`)
 - Image generation and local file save
 - Text-to-speech generation and local audio file save
@@ -114,7 +119,187 @@ curl -X POST "http://localhost:8080/ask" \
 
 ---
 
-### 2) Create Embedding + Save to DB
+### 2) Prompt Template with Variables
+
+**Endpoint**: `POST /ask/template`
+
+**Parameters**:
+
+- `topic` (string)
+- `audience` (string)
+- `tone` (string)
+
+**How it works**:
+
+This endpoint uses a prompt template with placeholders and binds values at runtime.
+
+Template used in code:
+
+```text
+Explain {topic} for {audience} in a {tone} tone.
+Keep the answer in 5 bullet points and include one practical example.
+```
+
+Variable binding in code:
+
+- `{topic}` -> `topic`
+- `{audience}` -> `audience`
+- `{tone}` -> `tone`
+
+**Example**:
+
+```bash
+curl -X POST "http://localhost:8080/ask/template" \
+  -d "topic=vector embeddings" \
+  -d "audience=backend developers" \
+  -d "tone=practical"
+```
+
+**Success Response**:
+
+- `200 OK`
+- Body: generated explanation using your variable values
+
+---
+
+### 3) Celebrity Details (Structured Output)
+
+**Endpoint**: `POST /ask/celebrity`
+
+**Parameter**:
+
+- `name` (string): celebrity name
+
+**What it does**:
+
+1. Prompts the model to return JSON only.
+2. Validates model JSON against a JSON Schema.
+3. Maps validated JSON into a POJO (`CelebrityDetails`).
+
+**Example**:
+
+```bash
+curl -X POST "http://localhost:8080/ask/celebrity" \
+  -d "name=Shah Rukh Khan"
+```
+
+**Sample response**:
+
+```json
+{
+  "name": "Shah Rukh Khan",
+  "profession": "Actor, Film Producer",
+  "nationality": "Indian",
+  "birthDate": "1965-11-02",
+  "knownFor": ["Bollywood films", "Global fanbase"],
+  "notableWorks": ["Dilwale Dulhania Le Jayenge", "Swades", "Chak De! India"],
+  "awards": ["Padma Shri"],
+  "summary": "One of the most influential Indian film actors with a decades-long career."
+}
+```
+
+---
+
+### 4) Function Calling / Tools
+
+**Endpoint**: `POST /ask/tools`
+
+**Parameter**:
+
+- `request` (string)
+
+**What it does**:
+
+Uses Spring AI `@Tool` methods during chat completion. The model can call tools to fetch celebrity birth year and profession, then compose a final answer.
+
+Available tools in code:
+
+- `getCelebrityBirthYear(name)`
+- `getCelebrityProfession(name)`
+
+**Example**:
+
+```bash
+curl -X POST "http://localhost:8080/ask/tools" \
+  -d "request=Tell me the profession and birth year of Shah Rukh Khan"
+```
+
+---
+
+### 5) Chat Completion (Streaming)
+
+**Endpoint**: `POST /ask/stream`
+
+**Parameter**:
+
+- `request` (string): user prompt
+
+**What it does**:
+
+Returns model output incrementally as a stream (`text/event-stream`) instead of waiting for full completion.
+
+**Example (curl, no buffering)**:
+
+```bash
+curl -N -X POST "http://localhost:8080/ask/stream" \
+  -d "request=Write a short poem about Java"
+```
+
+**Example (PowerShell)**:
+
+```powershell
+Invoke-WebRequest -Method Post -Uri "http://localhost:8080/ask/stream" -Body @{ request = "Explain streaming in GenAI" }
+```
+
+**Success Response**:
+
+- `200 OK`
+- `Content-Type: text/event-stream`
+- Body: streamed text chunks
+
+---
+
+### 6) RAG: Load Documents
+
+**Endpoint**: `POST /rag/load`
+
+**Parameter**:
+
+- `path` (string): folder path containing documents
+
+**Supported files**:
+
+- `.pdf`, `.html`, `.htm`, `.txt`, `.md`
+
+**Example**:
+
+```bash
+curl -X POST "http://localhost:8080/rag/load" \
+  -d "path=C:/Users/prati/intelij_workspace/openai/docs"
+```
+
+---
+
+### 7) RAG: Ask
+
+**Endpoint**: `POST /rag/ask`
+
+**Parameters**:
+
+- `question` (string)
+- `topK` (int, optional, default `4`)
+
+**Example**:
+
+```bash
+curl -X POST "http://localhost:8080/rag/ask" \
+  -d "question=Summarize pricing conditions" \
+  -d "topK=4"
+```
+
+---
+
+### 8) Create Embedding + Save to DB
 
 **Endpoint**: `POST /embed`
 
@@ -142,7 +327,7 @@ curl -X POST "http://localhost:8080/embed" \
 
 ---
 
-### 3) Generate Image
+### 9) Generate Image
 
 **Endpoint**: `POST /image`
 
@@ -177,7 +362,7 @@ curl -X POST "http://localhost:8080/image" \
 
 ---
 
-### 4) Generate Speech (Text-to-Speech)
+### 10) Generate Speech (Text-to-Speech)
 
 **Endpoint**: `POST /speech`
 
@@ -219,6 +404,12 @@ curl -X POST "http://localhost:8080/speech" \
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri "http://localhost:8080/ask" -Body @{ request = "What is vector embedding?" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/ask/template" -Body @{ topic = "prompt templates"; audience = "Java developers"; tone = "simple" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/ask/celebrity" -Body @{ name = "Shah Rukh Khan" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/ask/tools" -Body @{ request = "What is the profession and birth year of Tom Cruise?" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/rag/load" -Body @{ path = "C:/Users/prati/intelij_workspace/openai/docs" }
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/rag/ask" -Body @{ question = "Give me a summary from loaded docs"; topK = 4 }
+curl -N -X POST "http://localhost:8080/ask/stream" -d "request=Stream a short answer"
 Invoke-RestMethod -Method Post -Uri "http://localhost:8080/embed" -Body @{ request = "Store this sentence in vector DB" }
 Invoke-RestMethod -Method Post -Uri "http://localhost:8080/image" -Body @{ prompt = "A watercolor painting of mountains" }
 Invoke-RestMethod -Method Post -Uri "http://localhost:8080/speech" -Body @{ prompt = "This is a generated voice sample" }
